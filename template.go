@@ -50,7 +50,7 @@ type {{.LowercaseClient}} struct {
 }
 
 func (c *{{.LowercaseClient}}) Refresh() error {
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/_refresh", c.indexURL), nil)
+	req, err := c.newRequest("POST", fmt.Sprintf("%s/_refresh", c.indexURL), nil)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,11 @@ func (c *{{.LowercaseClient}}) Refresh() error {
 }
 
 func (c *{{.LowercaseClient}}) GetOneByID(ID string) (*{{.ModelWithPrefix}}, error) {
-	res, err := c.http.Get(fmt.Sprintf("%s/%s", c.typeURL, ID))
+	req, err := c.newRequest("GET", fmt.Sprintf("%s/%s", c.typeURL, ID), nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +116,11 @@ func {{.LowercaseModel}}sFromElasticsearchHits(hits []{{.LowercaseClient}}Hit) [
 }
 
 func (c *{{.LowercaseClient}}) GetList(offset, limit int) ([]{{.ModelWithPrefix}}, error) {
-	res, err := c.http.Get(fmt.Sprintf("%s/_search?size=%d&from=%d", c.typeURL, limit, offset))
+	req, err := c.newRequest("GET", fmt.Sprintf("%s/_search?size=%d&from=%d", c.typeURL, limit, offset), nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +133,7 @@ func (c *{{.LowercaseClient}}) GetList(offset, limit int) ([]{{.ModelWithPrefix}
 	return {{.LowercaseModel}}sFromElasticsearchHits(result.Hits.Hits), nil
 }
 
+
 // Index creates a new {{.ModelWithPrefix}} in elasticsearch
 // When the ID of the {{.Model}} is set, it updates the {{.Model}}
 // The first return value indicates, whether a new records has been created or not
@@ -134,7 +143,7 @@ func (c *{{.LowercaseClient}}) Index(m *{{.ModelWithPrefix}}) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/%s", c.typeURL, m.ID), body)
+	req, err := c.newRequest("POST", fmt.Sprintf("%s/%s", c.typeURL, m.ID), body)
 	if err != nil {
 		return false, err
 	}
@@ -148,12 +157,15 @@ func (c *{{.LowercaseClient}}) Index(m *{{.ModelWithPrefix}}) (bool, error) {
 	if err != nil {
 		return false, errors.Wrap(err, "decoding of elasticsearch response failed")
 	}
-	if response.ID == "" || (response.Result != "updated" && !response.Created) {
+	if response.Error != "" {
+		return false, errors.New(response.Error)
+	}
+	if response.ID == "" || (response.Result != "updated" && response.Result != "created") {
 		// if this case happens, please report with furhter information to hello@frederikvosberg.de to implement a better error handling
 		return false, errors.New("indexing of document in elasticsearch failed")
 	}
 	m.ID = response.ID
-	return response.Created, nil
+	return response.Result == "created", nil
 }
 
 func (c *{{.LowercaseClient}}) RecreateIndex() error {
@@ -165,7 +177,7 @@ func (c *{{.LowercaseClient}}) RecreateIndex() error {
 }
 
 func (c *{{.LowercaseClient}}) IndexExists() (bool, error) {
-	req, err := http.NewRequest("HEAD", c.indexURL, nil)
+	req, err := c.newRequest("HEAD", c.indexURL, nil)
 	if err != nil {
 		return false, err
 	}
@@ -181,7 +193,7 @@ func (c *{{.LowercaseClient}}) IndexExists() (bool, error) {
 }
 
 func (c *{{.LowercaseClient}}) DeleteIndex() error {
-	req, err := http.NewRequest("DELETE", c.indexURL, nil)
+	req, err := c.newRequest("DELETE", c.indexURL, nil)
 	if err != nil {
 		return err
 	}
@@ -202,7 +214,7 @@ func (c *{{.LowercaseClient}}) DeleteIndex() error {
 }
 
 func (c *{{.LowercaseClient}}) CreateIndex() error {
-	req, err := http.NewRequest("PUT", c.indexURL, strings.NewReader({{.LowercaseClient}}IndexDefinition))
+	req, err := c.newRequest("PUT", c.indexURL, strings.NewReader({{.LowercaseClient}}IndexDefinition))
 	if err != nil {
 		return err
 	}
@@ -220,6 +232,15 @@ func (c *{{.LowercaseClient}}) CreateIndex() error {
 		return fmt.Errorf("creation of index not acknowledged: %#v", response.Error)
 	}
 	return nil
+}
+
+func (c *{{.LowercaseClient}}) newRequest(method, url string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	return req, nil
 }
 
 var {{.LowercaseClient}}IndexDefinition = ` + "`{{.IndexDefinition}}`" + `
@@ -248,8 +269,8 @@ type elasticError struct {
 
 type {{.LowercaseClient}}IndexModelResponse struct {
 	ID      string ` + "`" + `json:"_id"` + "`" + `
-	Created bool   ` + "`" + `json:"created"` + "`" + `
 	Result  string ` + "`" + `json:"result"` + "`" + `
+	Error	string ` + "`" + `json:"error"` + "`" + `
 }
 
 type {{.LowercaseClient}}Hits struct {

@@ -47,7 +47,7 @@ func (g *ClientGenerator) WriteTo(w io.Writer) (int64, error) {
 		LowercaseModel:    strings.ToLower(string(g.Model[0])) + g.Model[1:],
 		SourcePackage:     g.PkgName, // TODO
 		TargetPackage:     g.PkgName, // TODO
-		Imports:           []string{"bytes", "encoding/json", "fmt", "net/http", "strings", "time", "github.com/fvosberg/errtypes", "github.com/pkg/errors"},
+		Imports:           []string{"bytes", "encoding/json", "fmt", "io", "net/http", "strings", "time", "github.com/fvosberg/errtypes", "github.com/pkg/errors"},
 		UppercaseClient:   strings.ToUpper(string(clientName[0])) + clientName[1:],
 		LowercaseClient:   strings.ToLower(string(clientName[0])) + clientName[1:],
 		IndexName:         strings.ToLower(g.Model) + "s",
