@@ -50,15 +50,6 @@ type {{.LowercaseClient}} struct {
 }
 
 func (c *{{.LowercaseClient}}) Refresh() error {
-	req, err := c.newRequest("POST", fmt.Sprintf("%s/_refresh", c.indexURL), nil)
-	if err != nil {
-		return err
-	}
-	res, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
 	var result struct {
 		Shards struct {
 			Total      int ` + "`" + `json:"total"` + "`" + `
@@ -66,9 +57,9 @@ func (c *{{.LowercaseClient}}) Refresh() error {
 			Failed     int ` + "`" + `json:"failed"` + "`" + `
 		} ` + "`" + `json:"_shards"` + "`" + `
 	}
-	err = json.NewDecoder(res.Body).Decode(&result)
+	err := c.doRequest("POST", fmt.Sprintf("%s/_refresh", c.indexURL), nil, &result)
 	if err != nil {
-		return errors.Wrap(err, "decoding of refresh response failed")
+		return err
 	}
 	if result.Shards.Failed != 0 {
 		return fmt.Errorf("Refreshing of %d shards failed (%d successful; %d in total)", result.Shards.Failed, result.Shards.Successful, result.Shards.Total)
@@ -77,23 +68,14 @@ func (c *{{.LowercaseClient}}) Refresh() error {
 }
 
 func (c *{{.LowercaseClient}}) GetOneByID(ID string) (*{{.ModelWithPrefix}}, error) {
-	req, err := c.newRequest("GET", fmt.Sprintf("%s/%s", c.typeURL, ID), nil)
-	if err != nil {
-		return nil, err
-	}
-	res, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
 	var response struct {
 		ID     string      ` + "`" + `json:"_id"` + "`" + `
 		Source {{.ModelWithPrefix}} ` + "`" + `json:"_source"` + "`" + `
 		Found  bool        ` + "`" + `json:"found"` + "`" + `
 	}
-	err = json.NewDecoder(res.Body).Decode(&response)
+	err := c.doRequest("GET", fmt.Sprintf("%s/%s", c.typeURL, ID), nil, &response)
 	if err != nil {
-		return nil, errors.Wrap(err, "decoding of by ID response failed")
+		return nil, err
 	}
 	if !response.Found {
 		return nil, errtypes.NewNotFoundf("{{.ModelWithPrefix}} with id %d not found", ID)
@@ -116,19 +98,14 @@ func {{.LowercaseModel}}sFromElasticsearchHits(hits []{{.LowercaseClient}}Hit) [
 }
 
 func (c *{{.LowercaseClient}}) GetList(offset, limit int) ([]{{.ModelWithPrefix}}, error) {
-	req, err := c.newRequest("GET", fmt.Sprintf("%s/_search?size=%d&from=%d", c.typeURL, limit, offset), nil)
-	if err != nil {
-		return nil, err
-	}
-	res, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
+	return c.DoListRequest(strings.NewReader(` + "`" + `{"from":%d,"size":%d}` + "`" + `))
+}
+
+func (c *{{.LowercaseClient}}) DoListRequest(body io.Reader) ([]{{.ModelWithPrefix}}, error) {
 	var result {{.LowercaseClient}}Hits
-	err = json.NewDecoder(res.Body).Decode(&result)
+	err := c.doRequest("GET", fmt.Sprintf("%s/_search", c.typeURL), body, &result)
 	if err != nil {
-		return nil, errors.Wrap(err, "decoding of search response failed")
+		return nil, err
 	}
 	return {{.LowercaseModel}}sFromElasticsearchHits(result.Hits.Hits), nil
 }
@@ -143,19 +120,10 @@ func (c *{{.LowercaseClient}}) Index(m *{{.ModelWithPrefix}}) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	req, err := c.newRequest("POST", fmt.Sprintf("%s/%s", c.typeURL, m.ID), body)
+	var response {{.LowercaseClient}}DocResponse
+	err = c.doRequest("POST", fmt.Sprintf("%s/%s", c.typeURL, m.ID), body, &response)
 	if err != nil {
 		return false, err
-	}
-	res, err := c.http.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer res.Body.Close()
-	var response {{.LowercaseClient}}IndexModelResponse
-	err = json.NewDecoder(res.Body).Decode(&response)
-	if err != nil {
-		return false, errors.Wrap(err, "decoding of elasticsearch response failed")
 	}
 	if response.Error != "" {
 		return false, errors.New(response.Error)
@@ -168,8 +136,25 @@ func (c *{{.LowercaseClient}}) Index(m *{{.ModelWithPrefix}}) (bool, error) {
 	return response.Result == "created", nil
 }
 
+// DeleteOneByID deletes a {{.ModelWithPrefix}} in elasticsearch, given its ID
+func (c *{{.LowercaseClient}}) DeleteOneByID(id string) error {
+	var response {{.LowercaseClient}}DocResponse
+	err := c.doRequest("DELETE", fmt.Sprintf("%s/%s", c.typeURL, id), nil, &response)
+	if err != nil {
+		return err
+	}
+	if response.Error != "" {
+		return errors.New(response.Error)
+	}
+	if response.Result != "deleted" {
+		// if this case happens, please report with furhter information to hello@frederikvosberg.de to implement a better error handling
+		return fmt.Errorf("deletion of document in elasticsearch failed, result was %q", response.Result)
+	}
+	return nil
+}
+
 func (c *{{.LowercaseClient}}) RecreateIndex() error {
-	err := c.DeleteIndex()
+	_, err := c.DeleteIndex()
 	if err != nil {
 		return err
 	}
@@ -192,41 +177,20 @@ func (c *{{.LowercaseClient}}) IndexExists() (bool, error) {
 	return res.StatusCode == 200, nil
 }
 
-func (c *{{.LowercaseClient}}) DeleteIndex() error {
-	req, err := c.newRequest("DELETE", c.indexURL, nil)
-	if err != nil {
-		return err
-	}
-	res, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
+func (c *{{.LowercaseClient}}) DeleteIndex() (bool, error) {
 	var response {{.LowercaseClient}}IndexManipulationResponse
-	err = json.NewDecoder(res.Body).Decode(&response)
+	err := c.doRequest("DELETE", c.indexURL, nil, response)
 	if err != nil {
-		return errors.Wrap(err, "couldn't decode JSON response")
+		return false, err
 	}
-	if !response.Acknowledged {
-		return fmt.Errorf("deletion of index not acknowledged: %#v", response.Error)
-	}
-	return nil
+	return response.Acknowledged, nil
 }
 
 func (c *{{.LowercaseClient}}) CreateIndex() error {
-	req, err := c.newRequest("PUT", c.indexURL, strings.NewReader({{.LowercaseClient}}IndexDefinition))
-	if err != nil {
-		return err
-	}
-	res, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
 	var response {{.LowercaseClient}}IndexManipulationResponse
-	err = json.NewDecoder(res.Body).Decode(&response)
+	err := c.doRequest("PUT", c.indexURL, strings.NewReader({{.LowercaseClient}}IndexDefinition), &response)
 	if err != nil {
-		return errors.Wrap(err, "couldn't decode JSON response")
+		return err
 	}
 	if !response.Acknowledged {
 		return fmt.Errorf("creation of index not acknowledged: %#v", response.Error)
@@ -241,6 +205,23 @@ func (c *{{.LowercaseClient}}) newRequest(method, url string, body io.Reader) (*
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	return req, nil
+}
+
+func (c *{{.LowercaseClient}}) doRequest(method, url string, body io.Reader, response interface{}) error {
+	req, err := c.newRequest(method, url, body)
+	if err != nil {
+		return err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	err = json.NewDecoder(res.Body).Decode(&response)
+	if err != nil {
+		return errors.Wrap(err, "couldn't decode JSON response")
+	}
+	return nil
 }
 
 var {{.LowercaseClient}}IndexDefinition = ` + "`{{.IndexDefinition}}`" + `
@@ -267,7 +248,7 @@ type elasticError struct {
 }
 {{- end }}
 
-type {{.LowercaseClient}}IndexModelResponse struct {
+type {{.LowercaseClient}}DocResponse struct {
 	ID      string ` + "`" + `json:"_id"` + "`" + `
 	Result  string ` + "`" + `json:"result"` + "`" + `
 	Error	string ` + "`" + `json:"error"` + "`" + `
