@@ -98,7 +98,7 @@ func {{.LowercaseModel}}sFromElasticsearchHits(hits []{{.LowercaseClient}}Hit) [
 }
 
 func (c *{{.LowercaseClient}}) GetList(offset, limit int) ([]{{.ModelWithPrefix}}, error) {
-	return c.DoListRequest(strings.NewReader(` + "`" + `{"from":%d,"size":%d}` + "`" + `))
+	return c.DoListRequest(strings.NewReader(fmt.Sprintf(` + "`" + `{"from":%d,"size":%d}` + "`" + `, offset, limit)))
 }
 
 func (c *{{.LowercaseClient}}) DoListRequest(body io.Reader) ([]{{.ModelWithPrefix}}, error) {
