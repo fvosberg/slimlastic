@@ -107,6 +107,9 @@ func (c *{{.LowercaseClient}}) DoListRequest(body io.Reader) ([]{{.ModelWithPref
 	if err != nil {
 		return nil, err
 	}
+	if result.Error != nil {
+		return nil, fmt.Errorf("Error in elasticsearch: %s, caused by %#v", result.Error.Reason, result.Error.CausedBy)
+	}
 	return {{.LowercaseModel}}sFromElasticsearchHits(result.Hits.Hits), nil
 }
 
