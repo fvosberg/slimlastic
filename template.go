@@ -101,7 +101,11 @@ func (c *{{.LowercaseClient}}) GetList(offset, limit int) ([]{{.ModelWithPrefix}
 	return c.DoListRequest(strings.NewReader(fmt.Sprintf(` + "`" + `{"from":%d,"size":%d}` + "`" + `, offset, limit)))
 }
 
-func (c *{{.LowercaseClient}}) DoListRequest(body io.Reader) ([]{{.ModelWithPrefix}}, error) {
+func (c *{{.LowercaseClient}}) DoListRequest(body io.Reader, opts ...{{.LowercaseClient}}ListRequestOpt) ([]{{.ModelWithPrefix}}, error) {
+	var cfg {{.LowercaseClient}}ListRequestOptions
+	for _, o := range opts {
+		o(&cfg)
+	}
 	var result {{.LowercaseClient}}Hits
 	err := c.doRequest("GET", fmt.Sprintf("%s/_search", c.typeURL), body, &result)
 	if err != nil {
@@ -110,7 +114,22 @@ func (c *{{.LowercaseClient}}) DoListRequest(body io.Reader) ([]{{.ModelWithPref
 	if result.Error != nil {
 		return nil, fmt.Errorf("Error in elasticsearch: %s, caused by %#v", result.Error.Reason, result.Error.CausedBy)
 	}
+	if cfg.total != nil {
+		*cfg.total = uint32(result.Hits.Total)
+	}
 	return {{.LowercaseModel}}sFromElasticsearchHits(result.Hits.Hits), nil
+}
+
+type {{.LowercaseClient}}ListRequestOptions struct {
+	total *uint32
+}
+
+type {{.LowercaseClient}}ListRequestOpt func(*{{.LowercaseClient}}ListRequestOptions)
+
+func {{.LowercaseClient}}WithTotal(t *uint32) {{.LowercaseClient}}ListRequestOpt {
+	return func(o *{{.LowercaseClient}}ListRequestOptions) {
+		o.total = t
+	}
 }
 
 
