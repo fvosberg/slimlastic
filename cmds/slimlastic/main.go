@@ -20,6 +20,7 @@ func main() {
 		httpTimeout       = flag.Int("timeout", 1, "timout for requests to elasticsearch")
 		indexDefinition   = flag.String("indexDefinition", "", "path to the elasticsearch index definition")
 		preventCommonCode = flag.Bool("preventCommon", false, "prevent the generation of common code") // TODO parse the package
+		typeName          = flag.String("typeName", "", "custom name for the elasticsearch document type")
 	)
 	flag.Usage = func() {
 		fmt.Println(`slimlastic [flags] model [indexDefinition]`)
@@ -49,6 +50,7 @@ func main() {
 		Model:             model,
 		PkgName:           *pkgName,
 		PreventCommonCode: *preventCommonCode,
+		TypeName:          *typeName,
 	}
 	if *httpTimeout != 0 {
 		generator.SetTimeout(time.Duration(*httpTimeout))

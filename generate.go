@@ -1,7 +1,6 @@
 package slimlastic
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"strings"
@@ -20,6 +19,7 @@ type ClientGenerator struct {
 
 	timeout             time.Duration // Timeout for requests to elasticsearch for the generated client. Can be set with SetTimeout
 	indexDefinitionPath string        // TODO to reader
+	TypeName            string        // Name of the elasticsearch document type, default to lowercase model
 }
 
 type code struct {
@@ -40,24 +40,38 @@ type code struct {
 
 // WriteTo writes the generated code to the given writer
 func (g *ClientGenerator) WriteTo(w io.Writer) (int64, error) {
-	clientName := g.Model + "ElasticsearchClient" // TODO configurable
+	model := g.Model
+	modelWithPrefix := model
+	sourcePackage := g.PkgName
+	if i := strings.LastIndex(model, "."); i > -1 {
+		model = g.Model[i+1:]
+		sourcePackage = g.Model[:i]
+		if i := strings.LastIndex(sourcePackage, "/"); i > -1 {
+			modelWithPrefix = sourcePackage[i+1:] + "." + model
+		}
+	}
+	clientName := model + "ElasticsearchClient" // TODO configurable
+	typeName := g.TypeName
+	if typeName == "" {
+		typeName = strings.ToLower(model)
+	}
+
 	doc := code{
-		Model:             g.Model,
-		ModelWithPrefix:   g.Model,
-		LowercaseModel:    strings.ToLower(string(g.Model[0])) + g.Model[1:],
-		SourcePackage:     g.PkgName, // TODO
-		TargetPackage:     g.PkgName, // TODO
+		Model:             model,
+		ModelWithPrefix:   modelWithPrefix,
+		LowercaseModel:    strings.ToLower(string(model[0])) + model[1:],
+		SourcePackage:     sourcePackage,
+		TargetPackage:     g.PkgName,
 		Imports:           []string{"bytes", "encoding/json", "fmt", "io", "net/http", "strings", "time", "github.com/fvosberg/errtypes", "github.com/pkg/errors"},
 		UppercaseClient:   strings.ToUpper(string(clientName[0])) + clientName[1:],
 		LowercaseClient:   strings.ToLower(string(clientName[0])) + clientName[1:],
-		IndexName:         strings.ToLower(g.Model) + "s",
-		TypeName:          strings.ToLower(g.Model),
+		IndexName:         typeName + "s",
+		TypeName:          typeName,
 		WithConstructor:   true,
 		PreventCommonCode: g.PreventCommonCode,
 	}
 	if doc.SourcePackage != doc.TargetPackage {
 		doc.Imports = append(doc.Imports, doc.SourcePackage)
-		doc.ModelWithPrefix = fmt.Sprintf("%s.%s", doc.SourcePackage, doc.Model)
 	}
 	indexDef, err := ioutil.ReadFile(g.indexDefinitionPath)
 	if err != nil {

@@ -90,7 +90,7 @@ func {{.LowercaseModel}}FromElasticsearchHit(hit {{.LowercaseClient}}Hit) {{.Mod
 }
 
 func {{.LowercaseModel}}sFromElasticsearchHits(hits []{{.LowercaseClient}}Hit) []{{.ModelWithPrefix}} {
-	res := make([]{{.Model}}, len(hits))
+	res := make([]{{.ModelWithPrefix}}, len(hits))
 	for n, h := range hits {
 		res[n] = {{.LowercaseModel}}FromElasticsearchHit(h)
 	}
