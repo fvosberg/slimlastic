@@ -151,8 +151,8 @@ func (c *{{.LowercaseClient}}) Index(m *{{.ModelWithPrefix}}, opts ...{{.Lowerca
 	if err != nil {
 		return false, err
 	}
-	if response.Error != "" {
-		return false, errors.New(response.Error)
+	if response.Error != nil {
+		return false,fmt.Errorf("%#v", response.Error)
 	}
 	if response.ID == "" || (response.Result != "updated" && response.Result != "created") {
 		// if this case happens, please report with furhter information to hello@frederikvosberg.de to implement a better error handling
@@ -181,8 +181,8 @@ func (c *{{.LowercaseClient}}) DeleteOneByID(id string) error {
 	if err != nil {
 		return err
 	}
-	if response.Error != "" {
-		return errors.New(response.Error)
+	if response.Error != nil {
+		return fmt.Errorf("%#v", response.Error)
 	}
 	if response.Result != "deleted" {
 		// if this case happens, please report with furhter information to hello@frederikvosberg.de to implement a better error handling
@@ -289,7 +289,7 @@ type elasticError struct {
 type {{.LowercaseClient}}DocResponse struct {
 	ID      string ` + "`" + `json:"_id"` + "`" + `
 	Result  string ` + "`" + `json:"result"` + "`" + `
-	Error	string ` + "`" + `json:"error"` + "`" + `
+	Error	*elasticError ` + "`" + `json:"error"` + "`" + `
 }
 
 type {{.LowercaseClient}}Hits struct {
